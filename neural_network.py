@@ -1,91 +1,121 @@
 import numpy as np
 
+def relu(x):
+    return np.maximum(0, x)
+
+def relu_derivative(x):
+    return (x > 0).astype(x.dtype)
+
+def softmax(x):
+    # Stabilizowana wersja softmax
+    exps = np.exp(x - np.max(x, axis=1, keepdims=True))
+    return exps / np.sum(exps, axis=1, keepdims=True)
+
+def cross_entropy_loss(y_pred, y_true):
+    eps = 1e-12
+    y_pred_clipped = np.clip(y_pred, eps, 1 - eps)
+    return -np.mean(np.sum(y_true * np.log(y_pred_clipped), axis=1))
+
+def accuracy(y_pred, y_true):
+    return np.mean(np.argmax(y_pred, axis=1) == np.argmax(y_true, axis=1))
+
 class NeuralNetwork:
-    def __init__(self):
-        # Inicjalizacja wag i biasów
-        self.weights = [
-            np.random.uniform(-0.1, 0.1, (28**2, 128)),  # Wejście do pierwszej warstwy ukrytej
-            np.random.uniform(-0.1, 0.1, (128, 64)),     # Pierwsza warstwa ukryta do drugiej warstwy ukrytej
-            np.random.uniform(-0.1, 0.1, (64, 10))       # Druga warstwa ukryta do warstwy wyjściowej
-        ]
-        self.biases = [
-            np.zeros(128),
-            np.zeros(64),
-            np.zeros(10)
-        ]
+    """
+    Prosty MLP z dwiema warstwami ukrytymi do klasyfikacji cyfr MNIST.
+    """
+    def __init__(self, input_dim=784, hidden_dim1=128, hidden_dim2=64, output_dim=10, lr=0.01):
+        """
+        Inicjalizacja wag metodą 'Xavier/He initialization' (w uproszczeniu).
+        """
+        # Warstwa 1
+        limit1 = np.sqrt(2.0 / input_dim)
+        self.W1 = np.random.randn(input_dim, hidden_dim1).astype(np.float32) * limit1
+        self.b1 = np.zeros((1, hidden_dim1), dtype=np.float32)
 
-    def activation_relu(self, x):
-        return np.maximum(0, x)
+        # Warstwa 2
+        limit2 = np.sqrt(2.0 / hidden_dim1)
+        self.W2 = np.random.randn(hidden_dim1, hidden_dim2).astype(np.float32) * limit2
+        self.b2 = np.zeros((1, hidden_dim2), dtype=np.float32)
 
-    def activation_softmax(self, x):
-        exp_shifted = np.exp(x - np.max(x))  # Stabilizacja
-        return exp_shifted / np.sum(exp_shifted)
+        # Warstwa 3 (wyjściowa)
+        limit3 = np.sqrt(2.0 / hidden_dim2)
+        self.W3 = np.random.randn(hidden_dim2, output_dim).astype(np.float32) * limit3
+        self.b3 = np.zeros((1, output_dim), dtype=np.float32)
 
-    def forward_pass(self, x):
-        activations = [x]
-        z_values = []
+        # Parametr uczenia
+        self.lr = lr
 
-        # Warstwy ukryte
-        for w, b in zip(self.weights[:-1], self.biases[:-1]):
-            z = np.dot(activations[-1], w) + b
-            a = self.activation_relu(z)
-            z_values.append(z)
-            activations.append(a)
+    def forward(self, X):
+        """
+        Wykonanie przepływu w przód (forward pass).
+        Zwraca (y_pred, (cache)), gdzie:
+          - y_pred to wynik softmax (predykcja)
+          - cache to krotka z wewn. wartościami potrzebnymi w backprop
+        """
+        # Warstwa 1
+        z1 = X @ self.W1 + self.b1
+        a1 = relu(z1)
 
-        # Warstwa wyjściowa
-        z = np.dot(activations[-1], self.weights[-1]) + self.biases[-1]
-        a = self.activation_softmax(z)
-        z_values.append(z)
-        activations.append(a)
+        # Warstwa 2
+        z2 = a1 @ self.W2 + self.b2
+        a2 = relu(z2)
 
-        return activations, z_values
+        # Warstwa 3 (wyjściowa)
+        z3 = a2 @ self.W3 + self.b3
+        y_pred = softmax(z3)
 
-    def train(self, x_train, y_train, epochs=10, learning_rate=0.01):
-        for epoch in range(epochs):
-            total_loss = 0
-            for x, y in zip(x_train, y_train):
-                # Normalizacja wejścia
-                x = x.flatten() / 255.0
+        # Zapisujemy potrzebne wartości w cache do backprop
+        cache = (X, z1, a1, z2, a2, z3, y_pred)
+        return y_pred, cache
 
-                # Forward pass
-                activations, z_values = self.forward_pass(x)
+    def backward(self, cache, y_true):
+        """
+        Wykonanie przepływu wstecz (backpropagation) i aktualizacja wag.
+        """
+        X, z1, a1, z2, a2, z3, y_pred = cache
+        bs = X.shape[0]  # rozmiar batcha
 
-                # Obliczenie strat (cross-entropy)
-                loss = -np.log(activations[-1][y] + 1e-15)  # Dodanie małej wartości dla stabilności
-                total_loss += loss
+        # Gradient względem z3
+        dz3 = (y_pred - y_true) / bs
+        dW3 = a2.T @ dz3
+        db3 = np.sum(dz3, axis=0, keepdims=True)
 
-                # Backward pass (prosta implementacja bez batchów)
-                # Gradient dla warstwy wyjściowej
-                delta = activations[-1].copy()
-                delta[y] -= 1  # Gradient cross-entropy z softmax
+        # Gradient względem warstwy 2
+        da2 = dz3 @ self.W3.T
+        dz2 = da2 * relu_derivative(z2)
+        dW2 = a1.T @ dz2
+        db2 = np.sum(dz2, axis=0, keepdims=True)
 
-                # Aktualizacja wag i biasów
-                for i in reversed(range(len(self.weights))):
-                    a_prev = activations[i]
-                    dw = np.outer(a_prev, delta)
-                    db = delta
-                    self.weights[i] -= learning_rate * dw
-                    self.biases[i] -= learning_rate * db
+        # Gradient względem warstwy 1
+        da1 = dz2 @ self.W2.T
+        dz1 = da1 * relu_derivative(z1)
+        dW1 = X.T @ dz1
+        db1 = np.sum(dz1, axis=0, keepdims=True)
 
-                    if i != 0:
-                        delta = np.dot(delta, self.weights[i].T)
-                        delta = delta * (z_values[i-1] > 0)  # Gradient ReLU
+        # Aktualizacja wag
+        self.W3 -= self.lr * dW3
+        self.b3 -= self.lr * db3
+        self.W2 -= self.lr * dW2
+        self.b2 -= self.lr * db2
+        self.W1 -= self.lr * dW1
+        self.b1 -= self.lr * db1
 
-            average_loss = total_loss / len(x_train)
-            print(f"Epoch {epoch+1}/{epochs}, Loss: {average_loss}")
+    def train_batch(self, X_batch, y_batch):
+        """
+        Trenuje jedną partię (batch) danych.
+        Zwraca (loss, accuracy) dla tej partii.
+        """
+        y_pred, cache = self.forward(X_batch)
+        loss = cross_entropy_loss(y_pred, y_batch)
+        acc = accuracy(y_pred, y_batch)
 
-    def predict(self, x):
-        activations, _ = self.forward_pass(x.flatten() / 255.0)
-        return np.argmax(activations[-1])
+        # Backprop
+        self.backward(cache, y_batch)
+        return loss, acc
 
-# Przykładowe użycie
-if __name__ == "__main__":
-    from tensorflow.keras.datasets import mnist
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
-
-    nn = NeuralNetwork()
-    nn.train(x_train, y_train, epochs=10, learning_rate=0.01)
-
-    # Przykładowa predykcja
-    print("Predykcja:", nn.predict(x_test[0]))
-    print("Prawdziwa etykieta:", y_test[0])
+    def predict(self, X):
+        """
+        Zwraca tablicę prawdopodobieństw predykcji (softmax).
+        """
+        y_pred, _ = self.forward(X)
+        return y_pred
