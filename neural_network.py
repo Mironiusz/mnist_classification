@@ -7,7 +7,6 @@ def relu_derivative(x):
     return (x > 0).astype(x.dtype)
 
 def softmax(x):
-    # Stabilizowana wersja softmax
     exps = np.exp(x - np.max(x, axis=1, keepdims=True))
     return exps / np.sum(exps, axis=1, keepdims=True)
 
@@ -21,101 +20,94 @@ def accuracy(y_pred, y_true):
 
 class NeuralNetwork:
     """
-    Prosty MLP z dwiema warstwami ukrytymi do klasyfikacji cyfr MNIST.
+    Ogólny MLP z parametryzowaną liczbą warstw, neuronów i funkcji aktywacji.
     """
-    def __init__(self, input_dim=784, hidden_dim1=128, hidden_dim2=64, output_dim=10, lr=0.01):
+    def __init__(self, layers, activations, lr=0.01, loss_fn=cross_entropy_loss, accuracy_fn=accuracy):
         """
-        Inicjalizacja wag metodą 'Xavier/He initialization' (w uproszczeniu).
+        Parametry:
+        - layers: lista określająca liczbę neuronów w kolejnych warstwach,
+                  np. [784, 128, 64, 10]
+        - activations: lista funkcji aktywacji dla warstw ukrytych,
+                       np. [relu, relu] dla dwóch warstw ukrytych
+        - lr: współczynnik uczenia
+        - loss_fn: funkcja straty
+        - accuracy_fn: funkcja mierząca dokładność
         """
-        # Warstwa 1
-        limit1 = np.sqrt(2.0 / input_dim)
-        self.W1 = np.random.randn(input_dim, hidden_dim1).astype(np.float32) * limit1
-        self.b1 = np.zeros((1, hidden_dim1), dtype=np.float32)
-
-        # Warstwa 2
-        limit2 = np.sqrt(2.0 / hidden_dim1)
-        self.W2 = np.random.randn(hidden_dim1, hidden_dim2).astype(np.float32) * limit2
-        self.b2 = np.zeros((1, hidden_dim2), dtype=np.float32)
-
-        # Warstwa 3 (wyjściowa)
-        limit3 = np.sqrt(2.0 / hidden_dim2)
-        self.W3 = np.random.randn(hidden_dim2, output_dim).astype(np.float32) * limit3
-        self.b3 = np.zeros((1, output_dim), dtype=np.float32)
-
-        # Parametr uczenia
         self.lr = lr
+        self.loss_fn = loss_fn
+        self.accuracy_fn = accuracy_fn
+
+        self.num_layers = len(layers) - 1  # liczba warstw z wagami (bez wejścia)
+        self.weights = []
+        self.biases = []
+        self.activations = activations
+        self.activation_derivatives = []
+
+        # Inicjalizacja wag i biasów dla każdej warstwy
+        for i in range(self.num_layers):
+            limit = np.sqrt(2.0 / layers[i])
+            self.weights.append(np.random.randn(layers[i], layers[i+1]).astype(np.float32) * limit)
+            self.biases.append(np.zeros((1, layers[i+1]), dtype=np.float32))
+            # Dla wyjściowej warstwy nie przypisujemy funkcji aktywacji z listy,
+            # gdyż użyjemy softmax w forward
+            if i < self.num_layers - 1:
+                # Zakładamy, że wszystkie warstwy ukryte używają podanej funkcji (np. ReLU)
+                # i jej pochodnej
+                self.activation_derivatives.append(relu_derivative)  # można rozszerzyć do innych
 
     def forward(self, X):
         """
-        Wykonanie przepływu w przód (forward pass).
-        Zwraca (y_pred, (cache)), gdzie:
-          - y_pred to wynik softmax (predykcja)
-          - cache to krotka z wewn. wartościami potrzebnymi w backprop
+        Forward pass przez wszystkie warstwy.
         """
-        # Warstwa 1
-        z1 = X @ self.W1 + self.b1
-        a1 = relu(z1)
-
-        # Warstwa 2
-        z2 = a1 @ self.W2 + self.b2
-        a2 = relu(z2)
-
-        # Warstwa 3 (wyjściowa)
-        z3 = a2 @ self.W3 + self.b3
-        y_pred = softmax(z3)
-
-        # Zapisujemy potrzebne wartości w cache do backprop
-        cache = (X, z1, a1, z2, a2, z3, y_pred)
+        cache = {}
+        cache['a0'] = X
+        # Przejście przez warstwy ukryte
+        for i in range(self.num_layers - 1):
+            z = cache[f'a{i}'] @ self.weights[i] + self.biases[i]
+            cache[f'z{i+1}'] = z
+            # Użycie ReLU dla warstw ukrytych (można rozszerzyć do innych aktywacji)
+            cache[f'a{i+1}'] = relu(z)
+        # Warstwa wyjściowa
+        z_out = cache[f'a{self.num_layers - 1}'] @ self.weights[-1] + self.biases[-1]
+        cache[f'z{self.num_layers}'] = z_out
+        y_pred = softmax(z_out)
+        cache[f'a{self.num_layers}'] = y_pred
         return y_pred, cache
 
     def backward(self, cache, y_true):
         """
-        Wykonanie przepływu wstecz (backpropagation) i aktualizacja wag.
+        Backpropagation dla całej sieci.
         """
-        X, z1, a1, z2, a2, z3, y_pred = cache
-        bs = X.shape[0]  # rozmiar batcha
+        grads_W = [None] * self.num_layers
+        grads_b = [None] * self.num_layers
+        bs = cache['a0'].shape[0]
+        # Gradient dla warstwy wyjściowej
+        delta = (cache[f'a{self.num_layers}'] - y_true) / bs
+        # Obliczenia dla ostatniej warstwy
+        a_prev = cache[f'a{self.num_layers - 1}']
+        grads_W[-1] = a_prev.T @ delta
+        grads_b[-1] = np.sum(delta, axis=0, keepdims=True)
 
-        # Gradient względem z3
-        dz3 = (y_pred - y_true) / bs
-        dW3 = a2.T @ dz3
-        db3 = np.sum(dz3, axis=0, keepdims=True)
+        # Backprop przez warstwy ukryte
+        for i in range(self.num_layers - 2, -1, -1):
+            dz = (delta @ self.weights[i+1].T) * relu_derivative(cache[f'z{i+1}'])
+            a_prev = cache[f'a{i}']
+            grads_W[i] = a_prev.T @ dz
+            grads_b[i] = np.sum(dz, axis=0, keepdims=True)
+            delta = dz
 
-        # Gradient względem warstwy 2
-        da2 = dz3 @ self.W3.T
-        dz2 = da2 * relu_derivative(z2)
-        dW2 = a1.T @ dz2
-        db2 = np.sum(dz2, axis=0, keepdims=True)
-
-        # Gradient względem warstwy 1
-        da1 = dz2 @ self.W2.T
-        dz1 = da1 * relu_derivative(z1)
-        dW1 = X.T @ dz1
-        db1 = np.sum(dz1, axis=0, keepdims=True)
-
-        # Aktualizacja wag
-        self.W3 -= self.lr * dW3
-        self.b3 -= self.lr * db3
-        self.W2 -= self.lr * dW2
-        self.b2 -= self.lr * db2
-        self.W1 -= self.lr * dW1
-        self.b1 -= self.lr * db1
+        # Aktualizacja wag i biasów
+        for i in range(self.num_layers):
+            self.weights[i] -= self.lr * grads_W[i]
+            self.biases[i]  -= self.lr * grads_b[i]
 
     def train_batch(self, X_batch, y_batch):
-        """
-        Trenuje jedną partię (batch) danych.
-        Zwraca (loss, accuracy) dla tej partii.
-        """
         y_pred, cache = self.forward(X_batch)
-        loss = cross_entropy_loss(y_pred, y_batch)
-        acc = accuracy(y_pred, y_batch)
-
-        # Backprop
+        loss = self.loss_fn(y_pred, y_batch)
+        acc = self.accuracy_fn(y_pred, y_batch)
         self.backward(cache, y_batch)
         return loss, acc
 
     def predict(self, X):
-        """
-        Zwraca tablicę prawdopodobieństw predykcji (softmax).
-        """
         y_pred, _ = self.forward(X)
         return y_pred
