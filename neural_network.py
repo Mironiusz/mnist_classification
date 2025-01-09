@@ -7,6 +7,10 @@ def relu_derivative(x):
     return (x > 0).astype(x.dtype)
 
 def softmax(x):
+    """
+    Konwertuje wektor liczb rzeczywistych na wektor prawdopodobieństwa, sumujący się do 1.
+    Interpretujemy go jako rozkład prawdopodobieństwa.
+    """
     exps = np.exp(x - np.max(x, axis=1, keepdims=True))
     return exps / np.sum(exps, axis=1, keepdims=True)
 
@@ -16,12 +20,13 @@ def cross_entropy_loss(y_pred, y_true):
     return -np.mean(np.sum(y_true * np.log(y_pred_clipped), axis=1))
 
 def accuracy(y_pred, y_true):
+    """
+    Mierzy procent poprawnie sklasyfikowanych próbek.
+    """
     return np.mean(np.argmax(y_pred, axis=1) == np.argmax(y_true, axis=1))
 
 class NeuralNetwork:
-    """
-    Ogólny MLP z parametryzowaną liczbą warstw, neuronów i funkcji aktywacji.
-    """
+
     def __init__(self, layers, activations, lr=0.01, loss_fn=cross_entropy_loss, accuracy_fn=accuracy):
         """
         Parametry:
@@ -37,23 +42,19 @@ class NeuralNetwork:
         self.loss_fn = loss_fn
         self.accuracy_fn = accuracy_fn
 
-        self.num_layers = len(layers) - 1  # liczba warstw z wagami (bez wejścia)
+        self.num_layers = len(layers) - 1 # Wejście to nie warstwa
         self.weights = []
         self.biases = []
         self.activations = activations
         self.activation_derivatives = []
 
-        # Inicjalizacja wag i biasów dla każdej warstwy
+        # Inicjalizacja wag i biasów HE initialization
         for i in range(self.num_layers):
             limit = np.sqrt(2.0 / layers[i])
             self.weights.append(np.random.randn(layers[i], layers[i+1]).astype(np.float32) * limit)
             self.biases.append(np.zeros((1, layers[i+1]), dtype=np.float32))
-            # Dla wyjściowej warstwy nie przypisujemy funkcji aktywacji z listy,
-            # gdyż użyjemy softmax w forward
             if i < self.num_layers - 1:
-                # Zakładamy, że wszystkie warstwy ukryte używają podanej funkcji (np. ReLU)
-                # i jej pochodnej
-                self.activation_derivatives.append(relu_derivative)  # można rozszerzyć do innych
+                self.activation_derivatives.append(relu_derivative)
 
     def forward(self, X):
         """
