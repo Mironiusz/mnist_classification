@@ -43,7 +43,7 @@ activations = [relu, relu]
 model = NeuralNetwork(layers=layers, activations=activations, lr=0.1)
 
 batch_size = 128
-epochs = 100
+epochs = 10
 num_train_samples = x_train.shape[0]
 num_batches = num_train_samples // batch_size
 
