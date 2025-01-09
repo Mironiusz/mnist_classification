@@ -7,22 +7,18 @@ import glob
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 from tensorflow.keras.datasets import mnist
-from sklearn.model_selection import train_test_split  # Dodano import dla podziału danych
+from sklearn.model_selection import train_test_split
 from neural_network import NeuralNetwork, cross_entropy_loss, accuracy, relu
 
-# --- Przygotowanie danych MNIST ---
 (x_full, y_full), (x_test, y_test) = mnist.load_data()
 
-# Normalizacja i spłaszczenie
 x_full = x_full.astype(np.float32) / 255.0
 x_test = x_test.astype(np.float32) / 255.0
 x_full = x_full.reshape(-1, 784)
 x_test = x_test.reshape(-1, 784)
 
-# Podział na zbiór treningowy i walidacyjny
 x_train, x_val, y_train, y_val = train_test_split(x_full, y_full, test_size=0.2, random_state=42)
 
-# --- Dodaj wizualizację kilku cyfr ze zbioru treningowego ---
 plt.figure(figsize=(10, 10))
 for i in range(25):
     plt.subplot(5, 5, i + 1)
@@ -32,7 +28,6 @@ for i in range(25):
 plt.tight_layout()
 plt.show()
 
-# One-hot encoding
 def to_one_hot(y, num_classes=10):
     oh = np.zeros((y.shape[0], num_classes), dtype=np.float32)
     for i, val in enumerate(y):
@@ -43,11 +38,9 @@ y_train_oh = to_one_hot(y_train)
 y_val_oh   = to_one_hot(y_val)
 y_test_oh  = to_one_hot(y_test)
 
-# --- Inicjalizacja i trenowanie sieci ---
-# Definicja architektury zgodnej z nową klasą NeuralNetwork
 layers = [784, 128, 64, 10]
-activations = [relu, relu]  # Aktywacje dla warstw ukrytych
-model = NeuralNetwork(layers=layers, activations=activations, lr=0.01)
+activations = [relu, relu]
+model = NeuralNetwork(layers=layers, activations=activations, lr=0.1)
 
 batch_size = 128
 epochs = 100
@@ -71,20 +64,18 @@ for e in range(epochs):
 
     print(f"Epoch {e+1}/{epochs} - loss: {epoch_loss / num_batches:.4f}, accuracy: {epoch_acc / num_batches:.4f}")
 
-    # Walidacja po każdej epoce
     y_pred_val = model.predict(x_val)
     val_loss = cross_entropy_loss(y_pred_val, y_val_oh)
     val_acc  = accuracy(y_pred_val, y_val_oh)
     print(f"Validation loss: {val_loss:.4f}, Validation accuracy: {val_acc:.4f}")
 
-# --- Test ---
 y_pred_test = model.predict(x_test)
 test_loss = cross_entropy_loss(y_pred_test, y_test_oh)
 test_acc  = accuracy(y_pred_test, y_test_oh)
 print(f"Test loss: {test_loss:.4f}, Test accuracy: {test_acc:.4f}")
 
 
-# --- Funkcje do wczytywania własnych obrazów ---
+# Funkcje do wczytywania naszych cyferek
 
 def center_and_pad_image(image_path):
     try:
@@ -153,11 +144,8 @@ def test_custom_image(model, image_path):
         plt.axis('off')
         plt.show()
 
-# --- Przykładowe testowanie własnych obrazów ---
-# Ścieżka do katalogu nadrzędnego
 parent_dir = os.path.join(".")
 
-# Pobranie wszystkich plików .png z katalogu nadrzędnego
 image_paths = glob.glob(os.path.join(parent_dir, "*.png"))
 
 for image_path in image_paths:

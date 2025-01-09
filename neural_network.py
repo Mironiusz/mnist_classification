@@ -62,13 +62,11 @@ class NeuralNetwork:
         """
         cache = {}
         cache['a0'] = X
-        # Przejście przez warstwy ukryte
         for i in range(self.num_layers - 1):
             z = cache[f'a{i}'] @ self.weights[i] + self.biases[i]
             cache[f'z{i+1}'] = z
-            # Użycie ReLU dla warstw ukrytych (można rozszerzyć do innych aktywacji)
             cache[f'a{i+1}'] = relu(z)
-        # Warstwa wyjściowa
+
         z_out = cache[f'a{self.num_layers - 1}'] @ self.weights[-1] + self.biases[-1]
         cache[f'z{self.num_layers}'] = z_out
         y_pred = softmax(z_out)
@@ -82,14 +80,14 @@ class NeuralNetwork:
         grads_W = [None] * self.num_layers
         grads_b = [None] * self.num_layers
         bs = cache['a0'].shape[0]
-        # Gradient dla warstwy wyjściowej
+
         delta = (cache[f'a{self.num_layers}'] - y_true) / bs
-        # Obliczenia dla ostatniej warstwy
+
         a_prev = cache[f'a{self.num_layers - 1}']
-        grads_W[-1] = a_prev.T @ delta
+        grads_W[-1] = a_prev.T @ delta # Transpozycja @ błąd
         grads_b[-1] = np.sum(delta, axis=0, keepdims=True)
 
-        # Backprop przez warstwy ukryte
+        # Propagacja przez warstwy ukryte
         for i in range(self.num_layers - 2, -1, -1):
             dz = (delta @ self.weights[i+1].T) * relu_derivative(cache[f'z{i+1}'])
             a_prev = cache[f'a{i}']
